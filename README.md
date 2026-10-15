@@ -1,0 +1,2 @@
+# Vending-machine-implementation-from-RTL-to-GDS-with-Cash-and-UPI
+Design and RTL-to-GDS implementation of a vending machine controller using Verilog HDL. The project covers RTL design, functional simulation, logic synthesis using Yosys, and physical design using OpenROAD/OpenLane, targeting the SkyWater SKY130 PDK. Includes source code, testbenches, simulation waveforms, implementation and final GDSII layout
