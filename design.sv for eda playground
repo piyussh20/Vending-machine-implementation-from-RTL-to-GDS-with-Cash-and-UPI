@@ -1,0 +1,124 @@
+// Code your design here
+// ============================================================
+// Vending Machine with Cash / UPI payment
+// Single product, price = Rs 15 per item
+// Synthesizable Verilog (works in EDA Playground + OpenLane)
+// ============================================================
+module vending_machine (
+    input             clk,
+    input             rst_n,       // active-low reset
+
+    // Quantity button
+    input      [3:0]  qty_in,      // quantity entered by user (1-15)
+    input             qty_btn,     // press to confirm quantity
+
+    // Payment mode button
+    input             mode_sel,    // 0 = CASH, 1 = UPI
+    input             mode_btn,    // press to confirm payment mode
+
+    // Cash input
+    input      [7:0]  cash_in,     // value of note/coin inserted
+    input             cash_valid,  // pulse when cash is inserted
+
+    // UPI input
+    input             upi_paid,    // pulse when UPI payment succeeded
+
+    // Outputs
+    output reg [7:0]  total_amt,   // total bill = qty * 15
+    output reg        qr_active,   // 1 = QR code is being shown
+    output reg [7:0]  qr_amount,   // amount encoded in the QR (e.g. 75)
+    output reg        dispense,    // 1-cycle pulse: product dispensed
+    output reg [3:0]  items_out,   // number of items dispensed
+    output reg [8:0]  change_out,  // change returned to user
+    output reg [2:0]  state        // current state (for debugging)
+);
+
+    // ---------------- State encoding ----------------
+    localparam IDLE      = 3'd0,  // waiting for quantity
+               SEL_MODE  = 3'd1,  // waiting for Cash / UPI choice
+               UPI_WAIT  = 3'd2,  // QR shown, waiting for payment
+               CASH_WAIT = 3'd3,  // collecting cash
+               DONE      = 3'd4;  // transaction finished
+
+    localparam PRICE = 4'd15;
+
+    reg [3:0] qty;
+    reg [8:0] paid;               // cash collected so far
+    wire [8:0] paid_next = paid + {1'b0, cash_in};
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state      <= IDLE;
+            total_amt  <= 8'd0;
+            qr_active  <= 1'b0;
+            qr_amount  <= 8'd0;
+            dispense   <= 1'b0;
+            items_out  <= 4'd0;
+            change_out <= 9'd0;
+            qty        <= 4'd0;
+            paid       <= 9'd0;
+        end else begin
+            dispense <= 1'b0;     // default: pulse lasts 1 cycle
+
+            case (state)
+                // ---- Step 1: user enters quantity ----
+                IDLE: begin
+                    qr_active <= 1'b0;
+                    if (qty_btn && qty_in != 4'd0) begin
+                        qty        <= qty_in;
+                        // qty*15 = (qty*16) - qty
+                        total_amt  <= {qty_in, 4'b0000} - {4'b0000, qty_in};
+                        paid       <= 9'd0;
+                        change_out <= 9'd0;
+                        items_out  <= 4'd0;
+                        qr_amount  <= 8'd0;
+                        state      <= SEL_MODE;
+                    end
+                end
+
+                // ---- Step 2: user chooses Cash or UPI ----
+                SEL_MODE: begin
+                    if (mode_btn) begin
+                        if (mode_sel) begin           // UPI
+                            qr_active <= 1'b1;        // "generate" QR
+                            qr_amount <= total_amt;   // QR carries bill amount
+                            state     <= UPI_WAIT;
+                        end else begin                // CASH
+                            state     <= CASH_WAIT;
+                        end
+                    end
+                end
+
+                // ---- Step 3a: UPI - wait for payment ----
+                UPI_WAIT: begin
+                    if (upi_paid) begin
+                        qr_active  <= 1'b0;
+                        dispense   <= 1'b1;
+                        items_out  <= qty;
+                        change_out <= 9'd0;
+                        state      <= DONE;
+                    end
+                end
+
+                // ---- Step 3b: Cash - collect and give change ----
+                CASH_WAIT: begin
+                    if (cash_valid) begin
+                        if (paid_next >= {1'b0, total_amt}) begin
+                            dispense   <= 1'b1;
+                            items_out  <= qty;
+                            change_out <= paid_next - {1'b0, total_amt};
+                            paid       <= 9'd0;
+                            state      <= DONE;
+                        end else begin
+                            paid <= paid_next;        // need more money
+                        end
+                    end
+                end
+
+                DONE: state <= IDLE;
+
+                default: state <= IDLE;
+            endcase
+        end
+    end
+endmodule
