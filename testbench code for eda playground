@@ -1,0 +1,102 @@
+// Code your testbench here
+// or browse Examples
+// Testbench for vending_machine (EDA Playground)
+`timescale 1ns/1ps
+module tb;
+
+    reg        clk = 0, rst_n = 0;
+    reg  [3:0] qty_in = 0;
+    reg        qty_btn = 0, mode_sel = 0, mode_btn = 0;
+    reg  [7:0] cash_in = 0;
+    reg        cash_valid = 0, upi_paid = 0;
+
+    wire [7:0] total_amt, qr_amount;
+    wire       qr_active, dispense;
+    wire [3:0] items_out;
+    wire [8:0] change_out;
+    wire [2:0] state;
+
+    vending_machine dut (
+        .clk(clk), .rst_n(rst_n),
+        .qty_in(qty_in), .qty_btn(qty_btn),
+        .mode_sel(mode_sel), .mode_btn(mode_btn),
+        .cash_in(cash_in), .cash_valid(cash_valid),
+        .upi_paid(upi_paid),
+        .total_amt(total_amt), .qr_active(qr_active),
+        .qr_amount(qr_amount), .dispense(dispense),
+        .items_out(items_out), .change_out(change_out),
+        .state(state)
+    );
+
+    always #5 clk = ~clk;   // 100 MHz
+
+    // ---------- helper tasks ----------
+    task enter_qty(input [3:0] q);
+        begin
+            @(negedge clk); qty_in = q; qty_btn = 1;
+            @(negedge clk); qty_btn = 0;
+        end
+    endtask
+
+    task choose_mode(input m);   // 0 = cash, 1 = UPI
+        begin
+            @(negedge clk); mode_sel = m; mode_btn = 1;
+            @(negedge clk); mode_btn = 0;
+        end
+    endtask
+
+    task insert_cash(input [7:0] amt);
+        begin
+            @(negedge clk); cash_in = amt; cash_valid = 1;
+            @(negedge clk); cash_valid = 0;
+            $display("[%0t] Inserted Rs %0d", $time, amt);
+        end
+    endtask
+
+    task pay_upi;
+        begin
+            @(negedge clk); upi_paid = 1;
+            @(negedge clk); upi_paid = 0;
+        end
+    endtask
+
+    initial begin
+        $dumpfile("dump.vcd");
+        $dumpvars(0, tb);
+
+        #22 rst_n = 1;
+
+        // ---------- TEST 1: 5 items, UPI -> QR of Rs 75 ----------
+        $display("\n--- TEST 1: Qty=5, UPI ---");
+        enter_qty(5);
+        choose_mode(1);
+        @(negedge clk);
+        $display("QR active=%b  QR shows Rs %0d (expected 75)", qr_active, qr_amount);
+        pay_upi;
+        repeat (2) @(negedge clk);
+        $display("Items dispensed=%0d  Change=%0d", items_out, change_out);
+
+        repeat (3) @(negedge clk);
+
+        // ---------- TEST 2: 2 items, Cash, Rs20 + Rs20 -> change 10 ----------
+        $display("\n--- TEST 2: Qty=2 (Rs 30), Cash ---");
+        enter_qty(2);
+        choose_mode(0);
+        insert_cash(20);
+        insert_cash(20);
+        repeat (2) @(negedge clk);
+        $display("Items dispensed=%0d  Change=%0d (expected 10)", items_out, change_out);
+
+        repeat (3) @(negedge clk);
+
+        // ---------- TEST 3: 1 item, Cash Rs50 -> change 35 ----------
+        $display("\n--- TEST 3: Qty=1 (Rs 15), Cash Rs50 ---");
+        enter_qty(1);
+        choose_mode(0);
+        insert_cash(50);
+        repeat (2) @(negedge clk);
+        $display("Items dispensed=%0d  Change=%0d (expected 35)", items_out, change_out);
+
+        #50 $finish;
+    end
+endmodule
